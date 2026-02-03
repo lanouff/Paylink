@@ -3,6 +3,9 @@ from django.contrib.auth.models import User
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET, require_POST
 from django.views.decorators.csrf import csrf_exempt
+from django.contrib.auth import authenticate, login, logout
+from django.views.decorators.csrf import ensure_csrf_cookie
+
 
 from .models import Handle
 
@@ -29,33 +32,76 @@ def check_handle(request):
 @csrf_exempt
 @require_POST
 def create_handle(request):
-    """
-    POST /api/handle/create/
-    Body: {"username": "...", "handle": "..."}
-    Creates a user (if not exists) and assigns a handle (if available).
-    This is TEMP for MVP setup; we'll replace with proper auth later.
-    """
+    if not request.user.is_authenticated:
+        return JsonResponse({"ok": False, "error": "Not logged in"}, status=401)
+
+    try:
+        body = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        return JsonResponse({"ok": False, "error": "Invalid JSON body"}, status=400)
+
+    handle = (body.get("handle") or "").strip().lower()
+    if not handle:
+        return JsonResponse({"ok": False, "error": "handle is required"}, status=400)
+
+    if Handle.objects.filter(handle=handle).exists():
+        return JsonResponse({"ok": False, "error": "Handle already taken"}, status=409)
+
+    if Handle.objects.filter(user=request.user).exists():
+        return JsonResponse({"ok": False, "error": "You already have a handle"}, status=409)
+
+    h = Handle.objects.create(user=request.user, handle=handle)
+    return JsonResponse({"ok": True, "username": request.user.username, "handle": f"@{h.handle}"})
+
+@ensure_csrf_cookie
+@require_GET
+def csrf(request):
+    # Sets the CSRF cookie for the browser
+    return JsonResponse({"ok": True})
+
+
+@csrf_exempt
+@require_POST
+def signup(request):
     try:
         body = json.loads(request.body.decode("utf-8"))
     except Exception:
         return JsonResponse({"ok": False, "error": "Invalid JSON body"}, status=400)
 
     username = (body.get("username") or "").strip()
-    handle = (body.get("handle") or "").strip().lower()
+    password = (body.get("password") or "").strip()
 
-    if not username or not handle:
-        return JsonResponse({"ok": False, "error": "username and handle are required"}, status=400)
+    if len(username) < 3 or len(password) < 6:
+        return JsonResponse({"ok": False, "error": "Username >= 3 chars, password >= 6 chars"}, status=400)
 
-    if Handle.objects.filter(handle=handle).exists():
-        return JsonResponse({"ok": False, "error": "Handle already taken"}, status=409)
+    if User.objects.filter(username=username).exists():
+        return JsonResponse({"ok": False, "error": "Username already exists"}, status=409)
 
-    user, created = User.objects.get_or_create(username=username)
-    if Handle.objects.filter(user=user).exists():
-        return JsonResponse({"ok": False, "error": "User already has a handle"}, status=409)
+    user = User.objects.create_user(username=username, password=password)
+    login(request, user)
+    return JsonResponse({"ok": True, "username": user.username})
 
+
+@csrf_exempt
+@require_POST
+def login_view(request):
     try:
-        h = Handle.objects.create(user=user, handle=handle)
-    except Exception as e:
-        return JsonResponse({"ok": False, "error": str(e)}, status=400)
+        body = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        return JsonResponse({"ok": False, "error": "Invalid JSON body"}, status=400)
 
-    return JsonResponse({"ok": True, "username": user.username, "handle": f"@{h.handle}"})
+    username = (body.get("username") or "").strip()
+    password = (body.get("password") or "").strip()
+
+    user = authenticate(request, username=username, password=password)
+    if user is None:
+        return JsonResponse({"ok": False, "error": "Invalid credentials"}, status=401)
+
+    login(request, user)
+    return JsonResponse({"ok": True, "username": user.username})
+
+
+@require_POST
+def logout_view(request):
+    logout(request)
+    return JsonResponse({"ok": True})
