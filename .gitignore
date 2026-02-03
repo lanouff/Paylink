@@ -1,0 +1,12 @@
+﻿# Python
+backend/venv/
+__pycache__/
+*.pyc
+.env
+
+# Django
+*.sqlite3
+
+# Node
+frontend/**/node_modules/
+frontend/**/dist/
