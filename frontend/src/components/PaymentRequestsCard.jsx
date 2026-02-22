@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { apiFetch } from "../api/client";
 
 export default function PaymentRequestsCard({ token }) {
+  const [tab, setTab] = useState("outgoing"); // outgoing | incoming
+
   const [targetHandle, setTargetHandle] = useState("");
   const [amount, setAmount] = useState(""); // pounds input
   const [note, setNote] = useState("");
@@ -10,10 +12,15 @@ export default function PaymentRequestsCard({ token }) {
   const [err, setErr] = useState("");
   const [info, setInfo] = useState("");
 
-  async function load() {
+  async function load(which = tab) {
     setErr("");
     try {
-      const data = await apiFetch("/payment-requests/", { token });
+      const path =
+        which === "incoming"
+          ? "/payment-requests/incoming/"
+          : "/payment-requests/outgoing/";
+
+      const data = await apiFetch(path, { token });
       setRequests(Array.isArray(data) ? data : []);
     } catch (e) {
       setErr(e.message);
@@ -21,16 +28,15 @@ export default function PaymentRequestsCard({ token }) {
   }
 
   useEffect(() => {
-    load();
+    load(tab);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [tab]);
 
   async function create(e) {
     e.preventDefault();
     setErr("");
     setInfo("");
 
-    // Convert pounds to minor units (GBP): £10.50 -> 1050
     const pounds = Number(amount);
     if (!Number.isFinite(pounds) || pounds <= 0) {
       setErr("Enter a valid amount (e.g. 10 or 10.50)");
@@ -54,7 +60,10 @@ export default function PaymentRequestsCard({ token }) {
       setTargetHandle("");
       setAmount("");
       setNote("");
-      await load();
+
+      // after creating, show outgoing and refresh
+      setTab("outgoing");
+      await load("outgoing");
     } catch (e2) {
       setErr(e2.message);
     }
@@ -88,10 +97,22 @@ export default function PaymentRequestsCard({ token }) {
     cursor: "pointer",
   };
 
+  const tabBtn = (active) => ({
+    ...buttonStyle,
+    flex: 1,
+    opacity: active ? 0.85 : 1,
+  });
+
   return (
     <div style={cardStyle}>
-      <h2 style={{ margin: 0, fontSize: 18 }}>Payment Requests</h2>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+        <h2 style={{ margin: 0, fontSize: 18 }}>Payment Requests</h2>
+        <button onClick={() => load(tab)} style={{ ...buttonStyle, opacity: 0.9 }}>
+          Refresh
+        </button>
+      </div>
 
+      {/* Create form */}
       <form onSubmit={create} style={{ display: "grid", gap: 10 }}>
         <input
           value={targetHandle}
@@ -117,9 +138,15 @@ export default function PaymentRequestsCard({ token }) {
         </button>
       </form>
 
-      <button onClick={load} style={{ ...buttonStyle, opacity: 0.9 }}>
-        Refresh list
-      </button>
+      {/* Tabs */}
+      <div style={{ display: "flex", gap: 8 }}>
+        <button onClick={() => setTab("outgoing")} style={tabBtn(tab === "outgoing")}>
+          Outgoing
+        </button>
+        <button onClick={() => setTab("incoming")} style={tabBtn(tab === "incoming")}>
+          Incoming
+        </button>
+      </div>
 
       {info && (
         <div style={{ background: "#0f1a10", border: "1px solid #1f5a2a", padding: 12, borderRadius: 12 }}>
@@ -135,7 +162,9 @@ export default function PaymentRequestsCard({ token }) {
 
       <div style={{ display: "grid", gap: 8 }}>
         {requests.length === 0 ? (
-          <div style={{ opacity: 0.8 }}>No requests yet.</div>
+          <div style={{ opacity: 0.8 }}>
+            {tab === "incoming" ? "No incoming requests yet." : "No outgoing requests yet."}
+          </div>
         ) : (
           requests.map((r) => (
             <div
@@ -148,11 +177,18 @@ export default function PaymentRequestsCard({ token }) {
               }}
             >
               <div style={{ fontWeight: 700 }}>
-                To: @{r.target_handle} — £{(r.amount_in_minor / 100).toFixed(2)}
+                {tab === "incoming" ? (
+                  <>From: {r.requester} → You (@{r.target_handle})</>
+                ) : (
+                  <>To: @{r.target_handle}</>
+                )}
+                {" — "}£{(r.amount_in_minor / 100).toFixed(2)}
               </div>
+
               <div style={{ opacity: 0.8, marginTop: 4 }}>
                 Status: {r.status} • {new Date(r.created_at).toLocaleString()}
               </div>
+
               {r.note && <div style={{ marginTop: 6 }}>Note: {r.note}</div>}
             </div>
           ))
