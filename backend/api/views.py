@@ -1,63 +1,20 @@
 import json
+
+from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET, require_POST
 from django.views.decorators.csrf import csrf_exempt
-from django.contrib.auth import authenticate, login, logout
-from django.views.decorators.csrf import ensure_csrf_cookie
 
-
-from .models import Handle
+from rest_framework.authtoken.models import Token
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.authentication import TokenAuthentication
 
 
 @require_GET
 def health(request):
     return JsonResponse({"ok": True, "service": "paylink-backend"})
-
-
-@require_GET
-def check_handle(request):
-    """
-    /api/handle/check/?handle=somehandle
-    Returns whether handle is available.
-    """
-    handle = (request.GET.get("handle") or "").strip().lower()
-    if not handle:
-        return JsonResponse({"ok": False, "error": "handle query param required"}, status=400)
-
-    exists = Handle.objects.filter(handle=handle).exists()
-    return JsonResponse({"ok": True, "handle": handle, "available": not exists})
-
-
-@csrf_exempt
-@require_POST
-def create_handle(request):
-    if not request.user.is_authenticated:
-        return JsonResponse({"ok": False, "error": "Not logged in"}, status=401)
-
-    try:
-        body = json.loads(request.body.decode("utf-8"))
-    except Exception:
-        return JsonResponse({"ok": False, "error": "Invalid JSON body"}, status=400)
-
-    handle = (body.get("handle") or "").strip().lower()
-    if not handle:
-        return JsonResponse({"ok": False, "error": "handle is required"}, status=400)
-
-    if Handle.objects.filter(handle=handle).exists():
-        return JsonResponse({"ok": False, "error": "Handle already taken"}, status=409)
-
-    if Handle.objects.filter(user=request.user).exists():
-        return JsonResponse({"ok": False, "error": "You already have a handle"}, status=409)
-
-    h = Handle.objects.create(user=request.user, handle=handle)
-    return JsonResponse({"ok": True, "username": request.user.username, "handle": f"@{h.handle}"})
-
-@ensure_csrf_cookie
-@require_GET
-def csrf(request):
-    # Sets the CSRF cookie for the browser
-    return JsonResponse({"ok": True})
 
 
 @csrf_exempt
@@ -72,14 +29,21 @@ def signup(request):
     password = (body.get("password") or "").strip()
 
     if len(username) < 3 or len(password) < 6:
-        return JsonResponse({"ok": False, "error": "Username >= 3 chars, password >= 6 chars"}, status=400)
+        return JsonResponse(
+            {"ok": False, "error": "Username >= 3 chars, password >= 6 chars"},
+            status=400,
+        )
 
     if User.objects.filter(username=username).exists():
         return JsonResponse({"ok": False, "error": "Username already exists"}, status=409)
 
     user = User.objects.create_user(username=username, password=password)
-    login(request, user)
-    return JsonResponse({"ok": True, "username": user.username})
+    token = Token.objects.create(user=user)
+
+    return JsonResponse(
+        {"ok": True, "username": user.username, "token": token.key},
+        status=201,
+    )
 
 
 @csrf_exempt
@@ -97,11 +61,27 @@ def login_view(request):
     if user is None:
         return JsonResponse({"ok": False, "error": "Invalid credentials"}, status=401)
 
-    login(request, user)
-    return JsonResponse({"ok": True, "username": user.username})
+    token, _ = Token.objects.get_or_create(user=user)
+    return JsonResponse({"ok": True, "username": user.username, "token": token.key})
 
 
-@require_POST
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
 def logout_view(request):
-    logout(request)
+    """
+    Token logout = delete current token.
+    Client should also clear token from localStorage.
+    """
+    # request.auth is the token instance/key when TokenAuthentication succeeds
+    if request.auth:
+        try:
+            Token.objects.filter(key=str(request.auth)).delete()
+        except Exception:
+            pass
     return JsonResponse({"ok": True})
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def me(request):
+    return JsonResponse({"ok": True, "username": request.user.username})
