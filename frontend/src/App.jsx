@@ -3,6 +3,7 @@ import AuthCard from "./components/AuthCard";
 import HandleCard from "./components/HandleCard";
 import PaymentRequestsCard from "./components/PaymentRequestsCard";
 import { apiFetch, clearToken, getToken } from "./api/client";
+import BankCard from "./components/BankCard";
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -89,6 +90,7 @@ export default function App() {
             </div>
 
             <HandleCard token={token} />
+            <BankCard token={token} />
             <PaymentRequestsCard token={token} />
           </>
         )}

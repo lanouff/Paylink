@@ -2,8 +2,9 @@ import { useState } from "react";
 import { apiFetch, setToken } from "../api/client";
 
 export default function AuthCard({ onAuthed }) {
-  const [mode, setMode] = useState("login"); // login | signup
+  const [mode, setMode] = useState("login");
   const [username, setUsername] = useState("");
+  const [email, setEmail] = useState(""); 
   const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
 
@@ -11,9 +12,15 @@ export default function AuthCard({ onAuthed }) {
     setErr("");
     try {
       const endpoint = mode === "login" ? "/auth/login/" : "/auth/signup/";
+
+      const body =
+        mode === "login"
+          ? { username, password }
+          : { username, email, password }; 
+
       const data = await apiFetch(endpoint, {
         method: "POST",
-        body: { username, password },
+        body,
       });
 
       setToken(data.token);
@@ -51,18 +58,25 @@ export default function AuthCard({ onAuthed }) {
     cursor: "pointer",
   };
 
+  function switchMode(nextMode) {
+    setErr("");
+    setMode(nextMode);
+    // Optional: clear email when going back to login
+    if (nextMode === "login") setEmail("");
+  }
+
   return (
     <div style={cardStyle}>
       <div style={{ display: "flex", gap: 8 }}>
         <button
-          onClick={() => setMode("login")}
+          onClick={() => switchMode("login")}
           disabled={mode === "login"}
           style={{ ...buttonStyle, opacity: mode === "login" ? 0.7 : 1, flex: 1 }}
         >
           Login
         </button>
         <button
-          onClick={() => setMode("signup")}
+          onClick={() => switchMode("signup")}
           disabled={mode === "signup"}
           style={{ ...buttonStyle, opacity: mode === "signup" ? 0.7 : 1, flex: 1 }}
         >
@@ -76,6 +90,18 @@ export default function AuthCard({ onAuthed }) {
         placeholder="username"
         style={inputStyle}
       />
+
+      {/* ✅ Email only when signing up */}
+      {mode === "signup" && (
+        <input
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="email"
+          type="email"
+          style={inputStyle}
+        />
+      )}
+
       <input
         value={password}
         onChange={(e) => setPassword(e.target.value)}

@@ -26,6 +26,7 @@ def signup(request):
         return JsonResponse({"ok": False, "error": "Invalid JSON body"}, status=400)
 
     username = (body.get("username") or "").strip()
+    email = (body.get("email") or "").strip().lower()
     password = (body.get("password") or "").strip()
 
     if len(username) < 3 or len(password) < 6:
@@ -34,17 +35,25 @@ def signup(request):
             status=400,
         )
 
+    if not email or "@" not in email:
+        return JsonResponse(
+            {"ok": False, "error": "Valid email is required"},
+            status=400,
+        )
+
     if User.objects.filter(username=username).exists():
         return JsonResponse({"ok": False, "error": "Username already exists"}, status=409)
 
-    user = User.objects.create_user(username=username, password=password)
+    if User.objects.filter(email=email).exists():
+        return JsonResponse({"ok": False, "error": "Email already exists"}, status=409)
+
+    user = User.objects.create_user(username=username, email=email, password=password)
     token = Token.objects.create(user=user)
 
     return JsonResponse(
-        {"ok": True, "username": user.username, "token": token.key},
+        {"ok": True, "username": user.username, "email": user.email, "token": token.key},
         status=201,
     )
-
 
 @csrf_exempt
 @require_POST
@@ -84,4 +93,6 @@ def logout_view(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def me(request):
-    return JsonResponse({"ok": True, "username": request.user.username})
+    return JsonResponse(
+        {"ok": True, "username": request.user.username, "email": request.user.email}
+    )

@@ -12,7 +12,7 @@ class PaymentRequest(models.Model):
     requester = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
-        related_name="sent_requests"
+        related_name="sent_requests",
     )
 
     target_handle = models.CharField(max_length=30)
@@ -30,3 +30,33 @@ class PaymentRequest(models.Model):
 
     def __str__(self):
         return f"{self.requester.username} → @{self.target_handle} ({self.amount_in_minor})"
+
+
+class TrueLayerAuthSession(models.Model):
+    """
+    Stores an OAuth 'state' for a single TrueLayer connect attempt.
+    Used to link the callback back to the correct user.
+    """
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    state = models.CharField(max_length=128, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    used_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"TrueLayerAuthSession(user={self.user_id}, used={bool(self.used_at)})"
+
+
+class BankConnection(models.Model):
+    """
+    Stores the user's TrueLayer tokens (dev/sandbox).
+    NOTE: For production you should encrypt tokens.
+    """
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    access_token = models.TextField()
+    refresh_token = models.TextField(null=True, blank=True)
+    expires_at = models.DateTimeField()
+    token_type = models.CharField(max_length=32, default="Bearer")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"BankConnection(user={self.user_id})"

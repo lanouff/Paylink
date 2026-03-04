@@ -11,9 +11,12 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 from pathlib import Path
+import os
+from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / ".env")
 
 
 # Quick-start development settings - unsuitable for production
@@ -27,7 +30,11 @@ DEBUG = True
 
 ALLOWED_HOSTS = []
 
-
+TRUELAYER_CLIENT_ID = os.getenv("TRUELAYER_CLIENT_ID")
+TRUELAYER_CLIENT_SECRET = os.getenv("TRUELAYER_CLIENT_SECRET")
+TRUELAYER_REDIRECT_URI = os.getenv("TRUELAYER_REDIRECT_URI")
+TRUELAYER_AUTH_BASE = os.getenv("TRUELAYER_AUTH_BASE")
+TRUELAYER_TOKEN_URL = os.getenv("TRUELAYER_TOKEN_URL")
 # Application definition
 
 INSTALLED_APPS = [
