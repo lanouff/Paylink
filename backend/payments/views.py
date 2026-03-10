@@ -1,6 +1,7 @@
 from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from handles.models import Handle
 from .models import PaymentRequest
@@ -34,7 +35,6 @@ class PaymentRequestListCreateView(generics.ListCreateAPIView):
         except Exception:
             return Response({"detail": "amount_in_minor must be a positive integer"}, status=400)
 
-        # Check that target handle exists
         if not Handle.objects.filter(value=target).exists():
             return Response({"detail": "Target handle does not exist"}, status=404)
 
@@ -72,3 +72,86 @@ class IncomingPaymentRequestsView(generics.ListAPIView):
     def get_queryset(self):
         my_handles = Handle.objects.filter(user=self.request.user).values_list("value", flat=True)
         return PaymentRequest.objects.filter(target_handle__in=my_handles).order_by("-created_at")
+
+
+class DeclinePaymentRequestView(APIView):
+    """
+    POST /api/payment-requests/<id>/decline/
+    Logged-in user can decline only requests sent to one of their own handles.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, payment_request_id):
+        payment_request = PaymentRequest.objects.filter(id=payment_request_id).first()
+        if not payment_request:
+            return Response(
+                {"detail": "Payment request not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if payment_request.status != PaymentRequest.Status.CREATED:
+            return Response(
+                {"detail": f"Payment request cannot be declined in status {payment_request.status}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        my_handles = set(
+            Handle.objects.filter(user=request.user).values_list("value", flat=True)
+        )
+
+        if payment_request.target_handle not in my_handles:
+            return Response(
+                {"detail": "You can only decline requests sent to your own handle"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        payment_request.status = PaymentRequest.Status.FAILED
+        payment_request.save(update_fields=["status"])
+
+        return Response(
+            {
+                "message": "Payment request declined.",
+                "payment_request_id": payment_request.id,
+                "status": payment_request.status,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class CancelPaymentRequestView(APIView):
+    """
+    POST /api/payment-requests/<id>/cancel/
+    Logged-in user can cancel only their own outgoing requests,
+    and only while the request is still in CREATED status.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, payment_request_id):
+        payment_request = PaymentRequest.objects.filter(
+            id=payment_request_id,
+            requester=request.user,
+        ).first()
+
+        if not payment_request:
+            return Response(
+                {"detail": "Payment request not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if payment_request.status != PaymentRequest.Status.CREATED:
+            return Response(
+                {"detail": f"Payment request cannot be cancelled in status {payment_request.status}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        payment_request.status = PaymentRequest.Status.CANCELLED
+        payment_request.save(update_fields=["status"])
+
+        return Response(
+            {
+                "message": "Payment request cancelled.",
+                "payment_request_id": payment_request.id,
+                "status": payment_request.status,
+            },
+            status=status.HTTP_200_OK,
+        )

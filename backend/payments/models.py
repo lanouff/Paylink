@@ -5,6 +5,7 @@ from django.conf import settings
 class PaymentRequest(models.Model):
     class Status(models.TextChoices):
         CREATED = "CREATED"
+        INITIATED = "INITIATED"
         PAID = "PAID"
         CANCELLED = "CANCELLED"
         FAILED = "FAILED"
@@ -13,6 +14,14 @@ class PaymentRequest(models.Model):
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="sent_requests",
+    )
+
+    payer_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="payment_requests_to_pay",
     )
 
     target_handle = models.CharField(max_length=30)
@@ -26,7 +35,12 @@ class PaymentRequest(models.Model):
         default=Status.CREATED,
     )
 
+    truelayer_payment_id = models.CharField(max_length=100, blank=True)
+    truelayer_resource_token = models.TextField(blank=True)
+    truelayer_payment_url = models.TextField(blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
+    paid_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
         return f"{self.requester.username} → @{self.target_handle} ({self.amount_in_minor})"

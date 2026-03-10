@@ -4,7 +4,7 @@ import { apiFetch, setToken } from "../api/client";
 export default function AuthCard({ onAuthed }) {
   const [mode, setMode] = useState("login");
   const [username, setUsername] = useState("");
-  const [email, setEmail] = useState(""); 
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
 
@@ -16,7 +16,7 @@ export default function AuthCard({ onAuthed }) {
       const body =
         mode === "login"
           ? { username, password }
-          : { username, email, password }; 
+          : { username, email, password };
 
       const data = await apiFetch(endpoint, {
         method: "POST",
@@ -24,7 +24,7 @@ export default function AuthCard({ onAuthed }) {
       });
 
       setToken(data.token);
-      onAuthed({ username: data.username, token: data.token });
+      onAuthed(data.token);
     } catch (e) {
       setErr(e.message);
     }
@@ -61,7 +61,6 @@ export default function AuthCard({ onAuthed }) {
   function switchMode(nextMode) {
     setErr("");
     setMode(nextMode);
-    // Optional: clear email when going back to login
     if (nextMode === "login") setEmail("");
   }
 
@@ -91,7 +90,6 @@ export default function AuthCard({ onAuthed }) {
         style={inputStyle}
       />
 
-      {/* ✅ Email only when signing up */}
       {mode === "signup" && (
         <input
           value={email}

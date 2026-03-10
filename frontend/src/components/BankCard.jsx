@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../api/client";
 
 export default function BankCard({ token }) {
@@ -12,55 +12,66 @@ export default function BankCard({ token }) {
   const cardStyle = {
     background: "#141414",
     border: "1px solid #2a2a2a",
-    borderRadius: 14,
-    padding: 18,
+    borderRadius: 18,
+    padding: 22,
     display: "grid",
-    gap: 12,
+    gap: 14,
+    boxShadow: "0 10px 30px rgba(0,0,0,0.18)",
   };
 
   const buttonStyle = {
-    padding: 12,
+    padding: "12px 16px",
     borderRadius: 12,
     border: "1px solid #2a2a2a",
     background: "#101010",
     color: "white",
     cursor: "pointer",
+    fontSize: 15,
   };
 
   const selectStyle = {
-    padding: 10,
-    borderRadius: 10,
+    padding: 14,
+    borderRadius: 12,
     border: "1px solid #3a3a3a",
     background: "#1b1b1b",
     color: "white",
     outline: "none",
     width: "100%",
+    fontSize: 15,
+  };
+
+  const panelStyle = {
+    background: "#101010",
+    border: "1px solid #2a2a2a",
+    borderRadius: 14,
+    padding: 16,
   };
 
   async function connectBank() {
     setErr("");
     try {
       const d = await apiFetch("/truelayer/auth-url/", { token });
-      window.location.href = d.auth_url; // backend returns {auth_url}
+      window.location.href = d.auth_url;
     } catch (e) {
       setErr(e.message);
     }
   }
 
   async function loadAccounts() {
-    setErr("");
     setLoading(true);
     try {
       const d = await apiFetch("/truelayer/accounts/", { token });
       const results = d?.results || [];
       setAccounts(results);
 
-      // auto-select first account if none selected
       if (!selectedId && results.length > 0) {
         setSelectedId(results[0].account_id);
       }
-    } catch (e) {
-      setErr(e.message);
+    } catch {
+      setAccounts([]);
+      setSelectedId("");
+      setBalance(null);
+      setTx([]);
     } finally {
       setLoading(false);
     }
@@ -68,6 +79,7 @@ export default function BankCard({ token }) {
 
   async function loadBalanceAndTx(accountId) {
     if (!accountId) return;
+
     setErr("");
     setLoading(true);
     try {
@@ -76,7 +88,7 @@ export default function BankCard({ token }) {
 
       const t = await apiFetch(`/truelayer/accounts/${accountId}/transactions/`, { token });
       const txResults = t?.results || [];
-      setTx(txResults.slice(0, 5)); // show latest 5
+      setTx(txResults.slice(0, 5));
     } catch (e) {
       setErr(e.message);
     } finally {
@@ -84,14 +96,12 @@ export default function BankCard({ token }) {
     }
   }
 
-  // initial load
   useEffect(() => {
     if (!token) return;
     loadAccounts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
-  // when selected changes, load details
   useEffect(() => {
     if (!selectedId) return;
     loadBalanceAndTx(selectedId);
@@ -100,24 +110,53 @@ export default function BankCard({ token }) {
 
   const connected = accounts.length > 0;
 
+  const selectedAccount = useMemo(
+    () => accounts.find((a) => a.account_id === selectedId) || accounts[0] || null,
+    [accounts, selectedId]
+  );
+
+  const balanceItem = balance?.results?.[0] || null;
+  const availableAmount =
+    balanceItem?.available ?? balanceItem?.current ?? balanceItem?.amount ?? null;
+  const currency =
+    balanceItem?.currency || selectedAccount?.currency || "GBP";
+
   return (
     <div style={cardStyle}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
-        <b>Bank</b>
+        <div>
+          <h2 style={{ margin: 0, fontSize: 20 }}>Bank</h2>
+          <div style={{ opacity: 0.65, fontSize: 14, marginTop: 4 }}>
+            Connect your bank and view account details
+          </div>
+        </div>
+
         <button onClick={connectBank} style={buttonStyle}>
           {connected ? "Reconnect Bank" : "Connect Bank"}
         </button>
       </div>
 
-      <button onClick={loadAccounts} style={buttonStyle} disabled={loading}>
-        {loading ? "Loading..." : "Refresh"}
-      </button>
+      <div style={{ display: "flex", gap: 10 }}>
+        <button onClick={loadAccounts} style={buttonStyle} disabled={loading}>
+          {loading ? "Loading..." : "Refresh"}
+        </button>
+      </div>
 
-      {accounts.length > 0 && (
+      {!connected && (
+        <div style={{ ...panelStyle, opacity: 0.85 }}>
+          Not connected yet. Click <b>Connect Bank</b> to link a bank via TrueLayer.
+        </div>
+      )}
+
+      {connected && (
         <>
           <div>
-            <div style={{ opacity: 0.85, marginBottom: 6 }}>Select account</div>
-            <select value={selectedId} onChange={(e) => setSelectedId(e.target.value)} style={selectStyle}>
+            <div style={{ opacity: 0.85, marginBottom: 8 }}>Select account</div>
+            <select
+              value={selectedId}
+              onChange={(e) => setSelectedId(e.target.value)}
+              style={selectStyle}
+            >
               {accounts.map((a) => (
                 <option key={a.account_id} value={a.account_id}>
                   {a.display_name} • {a.account_type} • {a.currency}
@@ -126,44 +165,88 @@ export default function BankCard({ token }) {
             </select>
           </div>
 
-          <div style={{ display: "grid", gap: 8 }}>
-            <b>Balance</b>
-            <pre
-              style={{
-                margin: 0,
-                background: "#101010",
-                border: "1px solid #2a2a2a",
-                borderRadius: 12,
-                padding: 12,
-                overflowX: "auto",
-              }}
-            >
-              {balance ? JSON.stringify(balance, null, 2) : "No balance loaded yet."}
-            </pre>
+          {selectedAccount && (
+            <div style={panelStyle}>
+              <div style={{ fontSize: 13, opacity: 0.7, marginBottom: 8 }}>Connected account</div>
+
+              <div style={{ fontSize: 20, fontWeight: 800 }}>
+                {selectedAccount.display_name || "Unnamed account"}
+              </div>
+
+              <div style={{ marginTop: 8, opacity: 0.85 }}>
+                Type: {selectedAccount.account_type || "N/A"}
+              </div>
+
+              <div style={{ marginTop: 4, opacity: 0.85 }}>
+                Currency: {selectedAccount.currency || "N/A"}
+              </div>
+
+              {selectedAccount.provider?.display_name && (
+                <div style={{ marginTop: 4, opacity: 0.85 }}>
+                  Provider: {selectedAccount.provider.display_name}
+                </div>
+              )}
+
+              <div style={{ marginTop: 4, opacity: 0.65, fontSize: 13 }}>
+                Account ID: {selectedAccount.account_id}
+              </div>
+            </div>
+          )}
+
+          <div style={panelStyle}>
+            <div style={{ fontSize: 13, opacity: 0.7, marginBottom: 8 }}>Balance</div>
+
+            <div style={{ fontSize: 28, fontWeight: 800 }}>
+              {availableAmount !== null && availableAmount !== undefined
+                ? `${currency} ${availableAmount}`
+                : "Balance unavailable"}
+            </div>
           </div>
 
-          <div style={{ display: "grid", gap: 8 }}>
-            <b>Latest transactions (5)</b>
-            <pre
-              style={{
-                margin: 0,
-                background: "#101010",
-                border: "1px solid #2a2a2a",
-                borderRadius: 12,
-                padding: 12,
-                overflowX: "auto",
-              }}
-            >
-              {tx.length ? JSON.stringify(tx, null, 2) : "No transactions found."}
-            </pre>
+          <div style={panelStyle}>
+            <div style={{ fontSize: 13, opacity: 0.7, marginBottom: 12 }}>
+              Latest transactions
+            </div>
+
+            {tx.length === 0 ? (
+              <div style={{ opacity: 0.75 }}>No transactions found.</div>
+            ) : (
+              <div style={{ display: "grid", gap: 10 }}>
+                {tx.map((item, index) => (
+                  <div
+                    key={item.transaction_id || item.timestamp || index}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: 12,
+                      paddingBottom: 10,
+                      borderBottom:
+                        index === tx.length - 1 ? "none" : "1px solid #242424",
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 700 }}>
+                        {item.description || item.merchant_name || "Transaction"}
+                      </div>
+                      <div style={{ opacity: 0.65, fontSize: 13, marginTop: 4 }}>
+                        {item.timestamp
+                          ? new Date(item.timestamp).toLocaleString()
+                          : "Unknown date"}
+                      </div>
+                    </div>
+
+                    <div style={{ fontWeight: 700, whiteSpace: "nowrap" }}>
+                      {item.currency || currency}{" "}
+                      {item.amount !== undefined && item.amount !== null
+                        ? item.amount
+                        : item.running_balance?.amount ?? "—"}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </>
-      )}
-
-      {!connected && (
-        <div style={{ opacity: 0.85 }}>
-          Not connected yet. Click <b>Connect Bank</b> to link a bank via TrueLayer.
-        </div>
       )}
 
       {err && (

@@ -3,11 +3,10 @@ import { apiFetch } from "../api/client";
 
 export default function HandleCard({ token }) {
   const [handle, setHandle] = useState("");
-  const [availability, setAvailability] = useState(null); // only for async results
+  const [availability, setAvailability] = useState(null);
   const [result, setResult] = useState(null);
   const [err, setErr] = useState("");
 
-  // availability check (no setState when input empty)
   useEffect(() => {
     const h = handle.trim().toLowerCase();
     if (!h) return;
@@ -38,70 +37,100 @@ export default function HandleCard({ token }) {
       const data = await apiFetch("/handles/", {
         method: "POST",
         token,
-        body: { value: handle, display_name: "" },
+        body: { value: handle.trim().toLowerCase(), display_name: "" },
       });
+
       setResult(data);
+      setHandle("");
+      setAvailability(null);
     } catch (e2) {
       setErr(e2.message);
     }
   }
 
-  // ✅ derived value so when handle is empty we show nothing
   const shownAvailability = handle.trim() ? availability : null;
 
   const cardStyle = {
     background: "#141414",
     border: "1px solid #2a2a2a",
-    borderRadius: 14,
-    padding: 18,
+    borderRadius: 18,
+    padding: 22,
     display: "grid",
-    gap: 12,
+    gap: 14,
+    boxShadow: "0 10px 30px rgba(0,0,0,0.18)",
   };
 
   const inputStyle = {
     width: "100%",
-    padding: 12,
-    borderRadius: 10,
+    padding: 14,
+    borderRadius: 12,
     border: "1px solid #3a3a3a",
     background: "#1b1b1b",
     color: "white",
     outline: "none",
+    fontSize: 15,
   };
 
   const buttonStyle = {
-    padding: 12,
+    padding: "12px 16px",
     borderRadius: 12,
     border: "1px solid #2a2a2a",
     background: "#101010",
     color: "white",
     cursor: "pointer",
+    fontSize: 15,
+  };
+
+  const resultCardStyle = {
+    background: "#101010",
+    border: "1px solid #2a2a2a",
+    borderRadius: 14,
+    padding: 16,
+    display: "grid",
+    gap: 8,
   };
 
   return (
     <div style={cardStyle}>
-      <h2 style={{ margin: 0, fontSize: 18 }}>Handle</h2>
+      <div>
+        <h2 style={{ margin: 0, fontSize: 20 }}>Handle</h2>
+        <div style={{ opacity: 0.65, fontSize: 14, marginTop: 4 }}>
+          Create your unique PayLink username
+        </div>
+      </div>
 
-      <form onSubmit={createHandle} style={{ display: "grid", gap: 10 }}>
+      <form onSubmit={createHandle} style={{ display: "grid", gap: 12 }}>
         <div>
-          <div style={{ marginBottom: 8 }}>Create your handle (no @)</div>
+          <div style={{ marginBottom: 8, opacity: 0.9 }}>Choose a handle</div>
           <input
             value={handle}
-            onChange={(e) => setHandle(e.target.value)}
+            onChange={(e) => {
+              setHandle(e.target.value);
+              setErr("");
+              setResult(null);
+            }}
             placeholder="noufel"
             style={inputStyle}
           />
         </div>
 
         {shownAvailability !== null && (
-          <div style={{ marginTop: 2 }}>
-            Availability:{" "}
+          <div
+            style={{
+              padding: 12,
+              borderRadius: 12,
+              border: `1px solid ${shownAvailability ? "#1f5a2a" : "#5a1f1f"}`,
+              background: shownAvailability ? "#0f1a10" : "#1a0f0f",
+            }}
+          >
+            <span style={{ opacity: 0.8 }}>Availability: </span>
             <b style={{ color: shownAvailability ? "#39d353" : "#ff5c5c" }}>
-              {shownAvailability ? "Available ✅" : "Taken ❌"}
+              {shownAvailability ? "Available" : "Taken"}
             </b>
           </div>
         )}
 
-        <button type="submit" style={{ ...buttonStyle, marginTop: 8 }}>
+        <button type="submit" style={buttonStyle}>
           Create Handle
         </button>
       </form>
@@ -120,20 +149,29 @@ export default function HandleCard({ token }) {
       )}
 
       {result && (
-        <pre
+        <div
           style={{
-            margin: 0,
-            whiteSpace: "pre-wrap",
-            wordBreak: "break-word",
-            overflowX: "auto",
-            background: "#101010",
-            border: "1px solid #2a2a2a",
-            padding: 12,
-            borderRadius: 12,
+            ...resultCardStyle,
+            border: "1px solid #1f5a2a",
+            background: "#0f1a10",
           }}
         >
-          {JSON.stringify(result, null, 2)}
-        </pre>
+          <div style={{ fontWeight: 700, color: "#39d353" }}>Handle created successfully</div>
+
+          <div>
+            <span style={{ opacity: 0.75 }}>Your handle</span>
+            <div style={{ fontSize: 22, fontWeight: 800, marginTop: 4 }}>
+              @{result.value}
+            </div>
+          </div>
+
+          {"display_name" in result && (
+            <div>
+              <span style={{ opacity: 0.75 }}>Display name</span>
+              <div style={{ marginTop: 4 }}>{result.display_name || "Not set"}</div>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

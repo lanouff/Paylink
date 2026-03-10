@@ -12,7 +12,8 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 
-from .models import TrueLayerAuthSession, BankConnection
+from handles.models import Handle
+from .models import TrueLayerAuthSession, BankConnection, PaymentRequest
 
 
 @api_view(["GET"])
@@ -29,7 +30,6 @@ def truelayer_auth_url(request):
 
     state = secrets.token_urlsafe(24)
 
-    # store state -> user mapping (used once)
     TrueLayerAuthSession.objects.create(user=request.user, state=state)
 
     params = {
@@ -61,7 +61,6 @@ def truelayer_callback(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    # state must exist and be unused
     sess = (
         TrueLayerAuthSession.objects
         .filter(state=state, used_at__isnull=True)
@@ -96,7 +95,6 @@ def truelayer_callback(request):
     expires_in = int(token_json.get("expires_in", 3600))
     expires_at = timezone.now() + timedelta(seconds=expires_in)
 
-    # store token for user
     BankConnection.objects.update_or_create(
         user=sess.user,
         defaults={
@@ -107,12 +105,11 @@ def truelayer_callback(request):
         },
     )
 
-    # mark state as used
     sess.used_at = timezone.now()
     sess.save(update_fields=["used_at"])
 
-    # redirect back to frontend (don’t expose token in URL/response)
     return redirect("http://localhost:5173/?bank_connected=1")
+
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
@@ -124,7 +121,6 @@ def truelayer_accounts(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    # TrueLayer Data API (sandbox)
     url = "https://api.truelayer-sandbox.com/data/v1/accounts"
     headers = {"Authorization": f"Bearer {conn.access_token}"}
 
@@ -136,21 +132,8 @@ def truelayer_accounts(request):
         )
 
     return Response(r.json())
-@api_view(["GET"])
-@permission_classes([IsAuthenticated])
-def truelayer_balance(request, account_id: str):
-    conn = BankConnection.objects.filter(user=request.user).first()
-    if not conn:
-        return Response({"error": "No bank connection found. Connect a bank first."}, status=status.HTTP_400_BAD_REQUEST)
 
-    url = f"https://api.truelayer-sandbox.com/data/v1/accounts/{account_id}/balance"
-    headers = {"Authorization": f"Bearer {conn.access_token}"}
 
-    r = requests.get(url, headers=headers)
-    if r.status_code != 200:
-        return Response({"error": "Failed to fetch balance", "details": r.text}, status=status.HTTP_400_BAD_REQUEST)
-
-    return Response(r.json())
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def truelayer_balance(request, account_id: str):
@@ -184,7 +167,6 @@ def truelayer_transactions(request, account_id: str):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    # Optional query params: from=YYYY-MM-DD, to=YYYY-MM-DD
     date_from = request.query_params.get("from")
     date_to = request.query_params.get("to")
 
@@ -205,3 +187,59 @@ def truelayer_transactions(request, account_id: str):
         )
 
     return Response(r.json())
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def truelayer_start_payment_for_request(request, payment_request_id: int):
+    """
+    Simulated payment flow for the prototype.
+    The user can pay an incoming request only if:
+    - the request exists
+    - it is still in CREATED status
+    - the target handle belongs to the logged-in user
+    - the user has a connected bank account through TrueLayer
+    """
+    payment_request = PaymentRequest.objects.filter(id=payment_request_id).select_related("requester").first()
+    if not payment_request:
+        return Response(
+            {"error": "Payment request not found"},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if payment_request.status != PaymentRequest.Status.CREATED:
+        return Response(
+            {"error": f"Payment request cannot be paid in status {payment_request.status}"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    my_handles = set(
+        Handle.objects.filter(user=request.user).values_list("value", flat=True)
+    )
+
+    if payment_request.target_handle not in my_handles:
+        return Response(
+            {"error": "You can only pay requests sent to your own handle"},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    conn = BankConnection.objects.filter(user=request.user).first()
+    if not conn:
+        return Response(
+            {"error": "No bank connection found. Connect a bank first."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    payment_request.payer_user = request.user
+    payment_request.status = PaymentRequest.Status.PAID
+    payment_request.paid_at = timezone.now()
+    payment_request.save(update_fields=["payer_user", "status", "paid_at"])
+
+    return Response(
+        {
+            "payment_request_id": payment_request.id,
+            "status": payment_request.status,
+            "message": "Payment simulated successfully.",
+        },
+        status=status.HTTP_200_OK,
+    )
