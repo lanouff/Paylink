@@ -6,6 +6,7 @@ from .views_truelayer import (
     truelayer_balance,
     truelayer_transactions,
     truelayer_start_payment_for_request,
+    paylink_balance,
 )
 from .views import (
     PaymentRequestListCreateView,
@@ -35,6 +36,7 @@ urlpatterns = [
     path("truelayer/accounts/", truelayer_accounts),
     path("truelayer/accounts/<str:account_id>/balance/", truelayer_balance),
     path("truelayer/accounts/<str:account_id>/transactions/", truelayer_transactions),
+    path("paylink/balance/", paylink_balance),
     path(
         "truelayer/payment-requests/<int:payment_request_id>/start/",
         truelayer_start_payment_for_request,

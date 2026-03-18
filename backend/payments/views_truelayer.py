@@ -6,6 +6,7 @@ from datetime import timedelta
 from django.conf import settings
 from django.utils import timezone
 from django.shortcuts import redirect
+from django.db import transaction
 
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
@@ -13,15 +14,12 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 
 from handles.models import Handle
-from .models import TrueLayerAuthSession, BankConnection, PaymentRequest
+from .models import TrueLayerAuthSession, BankConnection, PaymentRequest, PayLinkBalance
 
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def truelayer_auth_url(request):
-    """
-    Creates a TrueLayer auth URL and stores OAuth 'state' to link callback -> user.
-    """
     if not request.user.email:
         return Response(
             {"error": "Your user account has no email. Add an email to continue."},
@@ -49,9 +47,6 @@ def truelayer_auth_url(request):
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def truelayer_callback(request):
-    """
-    Validates 'state', exchanges code for token, stores token for correct user.
-    """
     code = request.query_params.get("code")
     state = request.query_params.get("state")
 
@@ -104,6 +99,8 @@ def truelayer_callback(request):
             "token_type": token_json.get("token_type", "Bearer"),
         },
     )
+
+    PayLinkBalance.objects.get_or_create(user=sess.user)
 
     sess.used_at = timezone.now()
     sess.save(update_fields=["used_at"])
@@ -173,9 +170,9 @@ def truelayer_transactions(request, account_id: str):
     url = f"https://api.truelayer-sandbox.com/data/v1/accounts/{account_id}/transactions"
     params = {}
     if date_from:
-        params["from"] = date_from
+      params["from"] = date_from
     if date_to:
-        params["to"] = date_to
+      params["to"] = date_to
 
     headers = {"Authorization": f"Bearer {conn.access_token}"}
 
@@ -189,17 +186,21 @@ def truelayer_transactions(request, account_id: str):
     return Response(r.json())
 
 
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def paylink_balance(request):
+    balance_obj, _ = PayLinkBalance.objects.get_or_create(user=request.user)
+    return Response(
+        {
+            "amount_in_minor": balance_obj.amount_in_minor,
+            "currency": "GBP",
+        }
+    )
+
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def truelayer_start_payment_for_request(request, payment_request_id: int):
-    """
-    Simulated payment flow for the prototype.
-    The user can pay an incoming request only if:
-    - the request exists
-    - it is still in CREATED status
-    - the target handle belongs to the logged-in user
-    - the user has a connected bank account through TrueLayer
-    """
     payment_request = PaymentRequest.objects.filter(id=payment_request_id).select_related("requester").first()
     if not payment_request:
         return Response(
@@ -230,10 +231,20 @@ def truelayer_start_payment_for_request(request, payment_request_id: int):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    payment_request.payer_user = request.user
-    payment_request.status = PaymentRequest.Status.PAID
-    payment_request.paid_at = timezone.now()
-    payment_request.save(update_fields=["payer_user", "status", "paid_at"])
+    with transaction.atomic():
+        payer_balance, _ = PayLinkBalance.objects.get_or_create(user=request.user)
+        requester_balance, _ = PayLinkBalance.objects.get_or_create(user=payment_request.requester)
+
+        payer_balance.amount_in_minor -= payment_request.amount_in_minor
+        requester_balance.amount_in_minor += payment_request.amount_in_minor
+
+        payer_balance.save(update_fields=["amount_in_minor", "updated_at"])
+        requester_balance.save(update_fields=["amount_in_minor", "updated_at"])
+
+        payment_request.payer_user = request.user
+        payment_request.status = PaymentRequest.Status.PAID
+        payment_request.paid_at = timezone.now()
+        payment_request.save(update_fields=["payer_user", "status", "paid_at"])
 
     return Response(
         {

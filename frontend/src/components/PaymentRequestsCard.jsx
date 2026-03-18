@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../api/client";
 
 export default function PaymentRequestsCard({ token }) {
   const [tab, setTab] = useState("outgoing");
+  const [search, setSearch] = useState("");
 
   const [targetHandle, setTargetHandle] = useState("");
   const [amount, setAmount] = useState("");
@@ -149,6 +150,27 @@ export default function PaymentRequestsCard({ token }) {
     await load(tab);
   }
 
+  const filteredRequests = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return requests;
+
+    return requests.filter((r) => {
+      const values = [
+        r.target_handle,
+        r.requester_username,
+        r.payer_username,
+        r.note,
+        r.status,
+        String(r.amount_in_minor / 100),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      return values.includes(q);
+    });
+  }, [requests, search]);
+
   function statusBadge(status) {
     const styles = {
       CREATED: { background: "#3a3a00", color: "#facc15" },
@@ -291,6 +313,13 @@ export default function PaymentRequestsCard({ token }) {
         </button>
       </div>
 
+      <input
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder={`Search ${tab} requests`}
+        style={inputStyle}
+      />
+
       {err && (
         <div
           style={{
@@ -317,12 +346,16 @@ export default function PaymentRequestsCard({ token }) {
         </div>
       )}
 
-      {requests.length === 0 ? (
+      {filteredRequests.length === 0 ? (
         <div style={{ opacity: 0.7 }}>
-          {tab === "incoming" ? "No incoming requests." : "No outgoing requests yet."}
+          {search.trim()
+            ? "No matching requests found."
+            : tab === "incoming"
+            ? "No incoming requests."
+            : "No outgoing requests yet."}
         </div>
       ) : (
-        requests.map((r) => (
+        filteredRequests.map((r) => (
           <div key={r.id} style={requestCardStyle}>
             <div style={{ fontWeight: 700, fontSize: 16 }}>
               {tab === "incoming" ? (

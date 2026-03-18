@@ -4,12 +4,39 @@ import { apiFetch } from "../api/client";
 export default function HandleCard({ token }) {
   const [handle, setHandle] = useState("");
   const [availability, setAvailability] = useState(null);
+  const [currentHandle, setCurrentHandle] = useState(null);
   const [result, setResult] = useState(null);
   const [err, setErr] = useState("");
 
   useEffect(() => {
+    if (!token) return;
+
+    let cancelled = false;
+
+    async function fetchExistingHandle() {
+      try {
+        const data = await apiFetch("/handles/", { token });
+        const first = Array.isArray(data) && data.length > 0 ? data[0] : null;
+        if (!cancelled) {
+          setCurrentHandle(first);
+        }
+      } catch {
+        if (!cancelled) {
+          setCurrentHandle(null);
+        }
+      }
+    }
+
+    fetchExistingHandle();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  useEffect(() => {
     const h = handle.trim().toLowerCase();
-    if (!h) return;
+    if (!h || currentHandle) return;
 
     let cancelled = false;
 
@@ -26,7 +53,7 @@ export default function HandleCard({ token }) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [handle]);
+  }, [handle, currentHandle]);
 
   async function createHandle(e) {
     e.preventDefault();
@@ -41,6 +68,7 @@ export default function HandleCard({ token }) {
       });
 
       setResult(data);
+      setCurrentHandle(data);
       setHandle("");
       setAvailability(null);
     } catch (e2) {
@@ -81,13 +109,11 @@ export default function HandleCard({ token }) {
     fontSize: 15,
   };
 
-  const resultCardStyle = {
+  const panelStyle = {
     background: "#101010",
     border: "1px solid #2a2a2a",
     borderRadius: 14,
     padding: 16,
-    display: "grid",
-    gap: 8,
   };
 
   return (
@@ -95,45 +121,57 @@ export default function HandleCard({ token }) {
       <div>
         <h2 style={{ margin: 0, fontSize: 20 }}>Handle</h2>
         <div style={{ opacity: 0.65, fontSize: 14, marginTop: 4 }}>
-          Create your unique PayLink username
+          Your unique PayLink username
         </div>
       </div>
 
-      <form onSubmit={createHandle} style={{ display: "grid", gap: 12 }}>
-        <div>
-          <div style={{ marginBottom: 8, opacity: 0.9 }}>Choose a handle</div>
-          <input
-            value={handle}
-            onChange={(e) => {
-              setHandle(e.target.value);
-              setErr("");
-              setResult(null);
-            }}
-            placeholder="noufel"
-            style={inputStyle}
-          />
-        </div>
-
-        {shownAvailability !== null && (
-          <div
-            style={{
-              padding: 12,
-              borderRadius: 12,
-              border: `1px solid ${shownAvailability ? "#1f5a2a" : "#5a1f1f"}`,
-              background: shownAvailability ? "#0f1a10" : "#1a0f0f",
-            }}
-          >
-            <span style={{ opacity: 0.8 }}>Availability: </span>
-            <b style={{ color: shownAvailability ? "#39d353" : "#ff5c5c" }}>
-              {shownAvailability ? "Available" : "Taken"}
-            </b>
+      {currentHandle ? (
+        <div style={{ ...panelStyle, border: "1px solid #1f5a2a", background: "#0f1a10" }}>
+          <div style={{ fontWeight: 700, color: "#39d353" }}>Current handle</div>
+          <div style={{ fontSize: 24, fontWeight: 800, marginTop: 6 }}>
+            @{currentHandle.value}
           </div>
-        )}
+          <div style={{ marginTop: 8, opacity: 0.75 }}>
+            This account already has a handle.
+          </div>
+        </div>
+      ) : (
+        <form onSubmit={createHandle} style={{ display: "grid", gap: 12 }}>
+          <div>
+            <div style={{ marginBottom: 8, opacity: 0.9 }}>Choose a handle</div>
+            <input
+              value={handle}
+              onChange={(e) => {
+                setHandle(e.target.value);
+                setErr("");
+                setResult(null);
+              }}
+              placeholder="noufel"
+              style={inputStyle}
+            />
+          </div>
 
-        <button type="submit" style={buttonStyle}>
-          Create Handle
-        </button>
-      </form>
+          {shownAvailability !== null && (
+            <div
+              style={{
+                padding: 12,
+                borderRadius: 12,
+                border: `1px solid ${shownAvailability ? "#1f5a2a" : "#5a1f1f"}`,
+                background: shownAvailability ? "#0f1a10" : "#1a0f0f",
+              }}
+            >
+              <span style={{ opacity: 0.8 }}>Availability: </span>
+              <b style={{ color: shownAvailability ? "#39d353" : "#ff5c5c" }}>
+                {shownAvailability ? "Available" : "Taken"}
+              </b>
+            </div>
+          )}
+
+          <button type="submit" style={buttonStyle}>
+            Create Handle
+          </button>
+        </form>
+      )}
 
       {err && (
         <div
@@ -148,29 +186,18 @@ export default function HandleCard({ token }) {
         </div>
       )}
 
-      {result && (
+      {result && !currentHandle && (
         <div
           style={{
-            ...resultCardStyle,
+            ...panelStyle,
             border: "1px solid #1f5a2a",
             background: "#0f1a10",
           }}
         >
           <div style={{ fontWeight: 700, color: "#39d353" }}>Handle created successfully</div>
-
-          <div>
-            <span style={{ opacity: 0.75 }}>Your handle</span>
-            <div style={{ fontSize: 22, fontWeight: 800, marginTop: 4 }}>
-              @{result.value}
-            </div>
+          <div style={{ fontSize: 22, fontWeight: 800, marginTop: 4 }}>
+            @{result.value}
           </div>
-
-          {"display_name" in result && (
-            <div>
-              <span style={{ opacity: 0.75 }}>Display name</span>
-              <div style={{ marginTop: 4 }}>{result.display_name || "Not set"}</div>
-            </div>
-          )}
         </div>
       )}
     </div>

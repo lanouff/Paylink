@@ -5,6 +5,7 @@ export default function BankCard({ token }) {
   const [accounts, setAccounts] = useState([]);
   const [selectedId, setSelectedId] = useState("");
   const [balance, setBalance] = useState(null);
+  const [paylinkBalance, setPaylinkBalance] = useState(null);
   const [tx, setTx] = useState([]);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
@@ -57,6 +58,15 @@ export default function BankCard({ token }) {
     }
   }
 
+  async function loadPayLinkBalance() {
+    try {
+      const data = await apiFetch("/paylink/balance/", { token });
+      setPaylinkBalance(data);
+    } catch (e) {
+      setErr(e.message);
+    }
+  }
+
   async function loadAccounts() {
     setLoading(true);
     try {
@@ -98,14 +108,50 @@ export default function BankCard({ token }) {
 
   useEffect(() => {
     if (!token) return;
-    loadAccounts();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
+    let cancelled = false;
+
+    async function initialLoad() {
+      try {
+        const data = await apiFetch("/paylink/balance/", { token });
+        if (!cancelled) {
+          setPaylinkBalance(data);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setErr(e.message);
+        }
+      }
+
+      try {
+        const d = await apiFetch("/truelayer/accounts/", { token });
+        const results = d?.results || [];
+        if (!cancelled) {
+          setAccounts(results);
+          if (!selectedId && results.length > 0) {
+            setSelectedId(results[0].account_id);
+          }
+        }
+      } catch {
+        if (!cancelled) {
+          setAccounts([]);
+          setSelectedId("");
+          setBalance(null);
+          setTx([]);
+        }
+      }
+    }
+
+    initialLoad();
+
+    return () => {
+      cancelled = true;
+    };
   }, [token]);
 
   useEffect(() => {
     if (!selectedId) return;
     loadBalanceAndTx(selectedId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
 
   const connected = accounts.length > 0;
@@ -137,9 +183,32 @@ export default function BankCard({ token }) {
       </div>
 
       <div style={{ display: "flex", gap: 10 }}>
-        <button onClick={loadAccounts} style={buttonStyle} disabled={loading}>
+        <button
+          onClick={async () => {
+            setErr("");
+            await loadPayLinkBalance();
+            await loadAccounts();
+            if (selectedId) {
+              await loadBalanceAndTx(selectedId);
+            }
+          }}
+          style={buttonStyle}
+          disabled={loading}
+        >
           {loading ? "Loading..." : "Refresh"}
         </button>
+      </div>
+
+      <div style={{ ...panelStyle, border: "1px solid #1f5a2a", background: "#0f1a10" }}>
+        <div style={{ fontSize: 13, opacity: 0.7, marginBottom: 8 }}>PayLink simulated balance</div>
+        <div style={{ fontSize: 28, fontWeight: 800 }}>
+          {paylinkBalance
+            ? `GBP ${(paylinkBalance.amount_in_minor / 100).toFixed(2)}`
+            : "Balance unavailable"}
+        </div>
+        <div style={{ marginTop: 8, opacity: 0.75 }}>
+          This balance changes when PayLink payments are settled in the demo.
+        </div>
       </div>
 
       {!connected && (
@@ -194,7 +263,7 @@ export default function BankCard({ token }) {
           )}
 
           <div style={panelStyle}>
-            <div style={{ fontSize: 13, opacity: 0.7, marginBottom: 8 }}>Balance</div>
+            <div style={{ fontSize: 13, opacity: 0.7, marginBottom: 8 }}>Bank balance (TrueLayer)</div>
 
             <div style={{ fontSize: 28, fontWeight: 800 }}>
               {availableAmount !== null && availableAmount !== undefined
