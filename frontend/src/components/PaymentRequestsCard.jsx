@@ -63,7 +63,7 @@ export default function PaymentRequestsCard({ token }) {
 
     const pounds = Number(amount);
     if (!Number.isFinite(pounds) || pounds <= 0) {
-      setErr("Enter a valid amount (e.g. 10 or 10.50)");
+      setErr("Enter a valid amount");
       return;
     }
 
