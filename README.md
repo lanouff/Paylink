@@ -53,18 +53,20 @@ cd YOUR-REPO
 ```
 
 ### 2. Backend Setup
+```bash
 cd backend
 python -m venv venv
 venv\Scripts\activate   # On Windows
 pip install -r requirements.txt
 python manage.py migrate
 python manage.py runserver
-
+```
 backend will run on : http://127.0.0.1:8000
 
 ### 3- Frontend Setup
+```bash
 cd frontend
 npm install
 npm run dev
-
+```
 frontend will run on : http://localhost:5173
